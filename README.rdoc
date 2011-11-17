@@ -46,6 +46,19 @@ Use the search method
 
   Product.search('hello world')
 
+
+Return results with a uniqueness constraint on one of the columns of the searchable table:
+
+  class Product < ActiveRecord::Base
+    index('mysearch', 'english', 'producer_id') do
+      name
+      description
+    end
+  end
+
+  Product.unique_search("smartphone")
+
+
 Full text searches can be sped up by creating indexes. To create them, run:
 
   $ rake texticle:create_indexes
@@ -70,6 +83,7 @@ Declare your indexes as you normally would:
 		index { title }
 	end
 	
+
 Say hello to #tsearch:
 
 	Book.create :title => "_why's Poignant Guide to Ruby"
@@ -78,16 +92,6 @@ Say hello to #tsearch:
 Trigram searching is still in beta, so expect the API to change and/or improve.
 
 
-Return results with a uniqueness constraint on one of the columns of the searchable table:
-
-  class Product < ActiveRecord::Base
-    index('mysearch', 'english', 'producer_id') do
-      name
-      description
-    end
-  end
-
-  Product.unique_search("smartphone")
 
 == REQUIREMENTS:
 
