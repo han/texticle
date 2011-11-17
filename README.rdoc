@@ -70,12 +70,24 @@ Declare your indexes as you normally would:
 		index { title }
 	end
 	
-Finally, say hello to #tsearch:
+Say hello to #tsearch:
 
 	Book.create :title => "_why's Poignant Guide to Ruby"
 	Book.tsearch "_whys Poignnt Gd t Rb" # => [#<Book title: "_why's Poignant Guide to Ruby">]
 	
 Trigram searching is still in beta, so expect the API to change and/or improve.
+
+
+Return results with a uniqueness constraint on one of the columns of the searchable table:
+
+  class Product < ActiveRecord::Base
+    index('mysearch', 'english', 'producer_id') do
+      name
+      description
+    end
+  end
+
+  Product.unique_search("smartphone")
 
 == REQUIREMENTS:
 

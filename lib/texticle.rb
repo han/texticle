@@ -56,14 +56,14 @@ module Texticle
 
   ###
   # Create an index with +name+ using +dictionary+
-  def index name = nil, dictionary = 'english', &block
+  def index name = nil, dictionary = 'english', key_column = nil, &block
     search_name = ['search', name].compact.join('_')
     index_name  = [table_name, name, 'fts_idx'].compact.join('_')
     this_index  = FullTextIndex.new(index_name, dictionary, self, &block)
 
     (self.full_text_indexes ||= []) << this_index
 
-    scope_lamba = lambda { |term|
+    scope_lambda = lambda { |term|
       # Let's extract the individual terms to allow for quoted and wildcard terms.
       term = term.scan(/"([^"]+)"|(\S+)/).flatten.compact.map do |lex|
         lex =~ /(.+)\*\s*$/ ? "'#{$1}':*" : "'#{lex}'"
@@ -77,10 +77,34 @@ module Texticle
         :order => 'rank DESC'
       }
     }
-    
+
+    if key_column.present?
+      # Selects rows that are unique in "key_column", including only the row with the highest ranking
+      unique_scope_lambda = lambda { |term|
+        term = term.scan(/"([^"]+)"|(\S+)/).flatten.compact.map do |lex|
+          lex =~ /(.+)\*\s*$/ ? "'#{$1}':*" : "'#{lex}'"
+        end.join(' & ')
+
+        {
+          :select => "#{table_name}.*, ts_rank_cd((#{this_index.to_s}),
+            to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) as rank",
+          :conditions =>
+            ["#{table_name}.#{primary_key} IN (
+              SELECT DISTINCT first_value(#{table_name}.#{primary_key}) OVER (
+                PARTITION BY #{table_name}.#{key_column}
+                ORDER BY ts_rank_cd((#{this_index.to_s}), to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) DESC
+              )
+              FROM #{table_name}
+              WHERE #{this_index.to_s} @@ to_tsquery(?,?))", dictionary, term],
+          :order => 'rank DESC'
+        }
+      }
+    end
+
     # tsearch, i.e. trigram search
     trigram_scope_lambda = lambda { |term|
       term = "'#{term.gsub("'", "''")}'" # " because emacs ruby-mode is totally confused by this line
+
 
       similarities = this_index.index_columns.values.flatten.inject([]) do |array, index|
         array << "similarity(#{index}, #{term})"
@@ -102,10 +126,12 @@ module Texticle
       # that Rails 3 emits. Can't use #respond_to?(:scope) since scope
       # is a protected method in Rails 2, and thus still returns true.
       if self.respond_to?(:scope) and not protected_methods.include?('scope')
-        scope search_name.to_sym, scope_lamba
+        scope search_name.to_sym, scope_lambda
+        scope(('unique_' + search_name).to_sym, unique_scope_lambda)
         scope(('t' + search_name).to_sym, trigram_scope_lambda)
       elsif self.respond_to? :named_scope
-        named_scope search_name.to_sym, scope_lamba
+        named_scope search_name.to_sym, scope_lambda
+        named_scope(('unique_' + search_name).to_sym, unique_scope_lambda)
         named_scope(('t' + search_name).to_sym, trigram_scope_lambda)
       end
     end
