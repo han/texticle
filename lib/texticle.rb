@@ -86,16 +86,18 @@ module Texticle
         end.join(' & ')
 
         {
-          :select => "#{table_name}.*, ts_rank_cd((#{this_index.to_s}),
-            to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) as rank",
-          :conditions =>
-            ["#{table_name}.#{primary_key} IN (
-              SELECT DISTINCT first_value(#{table_name}.#{primary_key}) OVER (
-                PARTITION BY #{table_name}.#{key_column}
-                ORDER BY ts_rank_cd((#{this_index.to_s}), to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) DESC
-              )
-              FROM #{table_name}
-              WHERE #{this_index.to_s} @@ to_tsquery(?,?))", dictionary, term],
+          :select => "_rank_table.*",
+          :from => "(SELECT *, ts_rank_cd((#{this_index.to_s}),
+            to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) as rank,
+            row_number() OVER rank_group AS row_num,
+            count(*) over rank_group AS cnt
+            FROM #{table_name}
+            WHERE #{this_index.to_s} @@ to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})
+            WINDOW rank_group AS (
+              PARTITION BY #{table_name}.#{key_column}
+              ORDER BY ts_rank_cd((#{this_index.to_s}), to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) DESC
+            )) AS _rank_table",
+          :conditions => "row_num = 1",
           :order => 'rank DESC'
         }
       }
@@ -109,11 +111,11 @@ module Texticle
       similarities = this_index.index_columns.values.flatten.inject([]) do |array, index|
         array << "similarity(#{index}, #{term})"
       end.join(" + ")
-      
+
       conditions = this_index.index_columns.values.flatten.inject([]) do |array, index|
         array << "(#{index} % #{term})"
       end.join(" OR ")
-      
+
       {
         :select => "#{table_name}.*, #{similarities} as rank",
         :conditions => conditions,
