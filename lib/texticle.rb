@@ -48,18 +48,17 @@ require 'texticle/railtie' if defined?(Rails) and Rails::VERSION::MAJOR > 2
 #     end
 #   end
 module Texticle
-  # The version of Texticle you are using.
-  VERSION = '1.0.4' unless defined?(Texticle::VERSION)
 
   # A list of full text indexes
   attr_accessor :full_text_indexes
 
   ###
   # Create an index with +name+ using +dictionary+
-  def index name = nil, dictionary = 'english', key_column = nil, &block
+  def index name = nil, dictionary = 'english', key_column = nil, limit = 1000, &block
     search_name = ['search', name].compact.join('_')
     index_name  = [table_name, name, 'fts_idx'].compact.join('_')
     this_index  = FullTextIndex.new(index_name, dictionary, self, &block)
+    limit = limit.to_i
 
     (self.full_text_indexes ||= []) << this_index
 
@@ -96,7 +95,10 @@ module Texticle
             WINDOW rank_group AS (
               PARTITION BY #{table_name}.#{key_column}
               ORDER BY ts_rank_cd((#{this_index.to_s}), to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) DESC
-            )) AS _rank_table",
+            )
+            ORDER BY rank DESC
+            LIMIT #{limit}
+            ) AS _rank_table",
           :conditions => "row_num = 1",
           :order => 'rank DESC'
         }
