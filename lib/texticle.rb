@@ -127,14 +127,15 @@ module Texticle
           :select => "_rank_table.*",
           :from => "(SELECT *, ts_rank_cd(#{this_index.weights},(#{this_index.to_s}),
             to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)}), #{normalization}) as rank,
-            row_number() OVER rank_group AS row_num,
-            count(*) over rank_group AS cnt
+            count(*) OVER rank_group AS cnt,
+            row_number() OVER rank_group AS row_num
             FROM #{table_name}
             WHERE #{this_index.to_s} @@ to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})
             WINDOW rank_group AS (
               PARTITION BY #{table_name}.#{key_column}
               ORDER BY ts_rank_cd(#{this_index.weights}, (#{this_index.to_s}),
                 to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)}), #{normalization}) DESC
+              RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
             )
             ORDER BY rank DESC
             LIMIT #{limit}
